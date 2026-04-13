@@ -34,6 +34,7 @@ export default function GamePage() {
   const [fps, setFps] = useState(0);
   const [ping, setPing] = useState(null);
   const [serverTickRate, setServerTickRate] = useState(null);
+  const [gameOverResult, setGameOverResult] = useState(null);
   const rendererRef = useRef(null);
   const multiplayerStateRef = useRef(null);
   const inputRef = useRef(null);
@@ -125,6 +126,13 @@ export default function GamePage() {
       setPing(Math.max(0, Math.round(performance.now() - clientTs)));
       if (tickRate) setServerTickRate(tickRate);
     });
+    socket.onGameOver(({ winner }) => {
+      setGameOverResult({
+        winner,
+        title: "Game Over",
+      });
+      setGameStarted(false);
+    });
 
     inputRef.current = new InputHandler({
       onDirection: sendDirection,
@@ -142,6 +150,48 @@ export default function GamePage() {
       clearInterval(pingTimer);
     };
   }, [isMultiplayer, connected, roomCode, socket, sendDirection]);
+
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    document.body.style.touchAction = "none";
+    const blockScroll = (e) => e.preventDefault();
+    window.addEventListener("touchmove", blockScroll, { passive: false });
+    return () => {
+      document.body.style.overflow = "auto";
+      document.body.style.touchAction = "auto";
+      window.removeEventListener("touchmove", blockScroll);
+    };
+  }, []);
+
+  useEffect(() => {
+    let startX = 0;
+    let startY = 0;
+
+    const handleTouchStart = (e) => {
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+    };
+
+    const handleTouchEnd = (e) => {
+      const endX = e.changedTouches[0].clientX;
+      const endY = e.changedTouches[0].clientY;
+      const dx = endX - startX;
+      const dy = endY - startY;
+      if (Math.abs(dx) < 20 && Math.abs(dy) < 20) return;
+      if (Math.abs(dx) > Math.abs(dy)) {
+        sendDirection(dx > 0 ? "RIGHT" : "LEFT");
+      } else {
+        sendDirection(dy > 0 ? "DOWN" : "UP");
+      }
+    };
+
+    window.addEventListener("touchstart", handleTouchStart, { passive: true });
+    window.addEventListener("touchend", handleTouchEnd, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", handleTouchStart);
+      window.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, [sendDirection]);
 
   const interpolatePlayers = useCallback((prevState, currentState, alpha) => {
     if (!currentState?.players) return {};
@@ -214,7 +264,12 @@ export default function GamePage() {
     }
   };
 
-  const multiplayerPlayers = multiplayerState ? Object.values(multiplayerState.players || {}) : [];
+  const multiplayerPlayers = multiplayerState
+    ? Object.values(multiplayerState.players || {}).map((p) => ({
+        ...p,
+        isMe: p.id === socket.getId(),
+      }))
+    : [];
 
   const handleBack = () => {
     navigate('/dashboard');
@@ -456,6 +511,22 @@ export default function GamePage() {
           onBack={handleBack}
           mode={mode}
         />
+      )}
+
+      {gameOverResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.75)" }}>
+          <div className="glass-card p-6 text-center max-w-sm w-[92%]">
+            <h2 className="text-2xl mb-2" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-accent2)' }}>
+              {gameOverResult.title}
+            </h2>
+            <p className="text-sm mb-4" style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-text)' }}>
+              {gameOverResult.winner === socket.getId() ? "You Win!" : "You Lost"}
+            </p>
+            <button className="btn-filled px-5 py-2 text-sm" onClick={() => setGameOverResult(null)}>
+              CLOSE
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

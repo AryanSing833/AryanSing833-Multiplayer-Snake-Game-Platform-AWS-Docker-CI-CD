@@ -52,7 +52,8 @@ body {
   background: var(--color-bg-primary);
   color: var(--color-text);
   min-height: 100vh;
-  overflow-x: hidden;
+  overflow: hidden;
+  touch-action: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

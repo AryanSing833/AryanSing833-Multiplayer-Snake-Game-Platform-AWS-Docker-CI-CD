@@ -13,7 +13,7 @@ const path = require("path");
 
 const GRID_SIZE = 20;
 const TICK_RATE = 200;
-const FOOD_COUNT = 3;
+const MAX_FOOD = 3;
 const MAX_PLAYERS = 4;
 
 // Palette for snake colors — one per player slot
@@ -69,13 +69,15 @@ function randInt(max) {
   return Math.floor(Math.random() * max);
 }
 
-function createPlayer(socketId) {
+function createPlayer(socketId, playerData = {}) {
   const x = randInt(GRID_SIZE);
   const y = randInt(GRID_SIZE);
-  const color = SNAKE_COLORS[colorIndex % SNAKE_COLORS.length];
+  const color = playerData.color || SNAKE_COLORS[colorIndex % SNAKE_COLORS.length];
   colorIndex++;
   return {
     id: socketId,
+    name: (playerData.name || `Player ${socketId.slice(0, 4).toUpperCase()}`).slice(0, 20),
+    age: playerData.age || "",
     x,
     y,
     direction: { ...DIRECTIONS.RIGHT },
@@ -103,7 +105,7 @@ function getOrCreateRoom(roomCode) {
 }
 
 function spawnFood(room) {
-  while (room.food.length < FOOD_COUNT) {
+  while (room.food.length < MAX_FOOD) {
     room.food.push({ x: randInt(GRID_SIZE), y: randInt(GRID_SIZE), id: `${Date.now()}-${Math.random()}` });
   }
 }
@@ -121,12 +123,13 @@ function buildRoomState(roomCode) {
       const p = room.players[id];
       acc[id] = {
         id: p.id,
+        name: p.name,
+        age: p.age,
         snake: p.body,
         direction: p.direction,
         score: p.score,
         color: p.color,
         alive: p.alive,
-        name: `Player ${p.id.slice(0, 4).toUpperCase()}`,
       };
       return acc;
     }, {}),
@@ -171,7 +174,42 @@ function tickRoom(roomCode) {
     player.alive = true;
   }
 
+  // Combat: higher score snake eliminates lower score snake on head collision.
+  const ids = Object.keys(room.players);
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      const a = room.players[ids[i]];
+      const b = room.players[ids[j]];
+      if (!a || !b) continue;
+      const aHead = a.body[0];
+      const bHead = b.body[0];
+      const collided = aHead && bHead && aHead.x === bHead.x && aHead.y === bHead.y;
+      if (!collided || a.score === b.score) continue;
+
+      if (a.score > b.score) {
+        a.score += Math.max(10, b.score);
+        delete room.players[b.id];
+      } else {
+        b.score += Math.max(10, a.score);
+        delete room.players[a.id];
+      }
+    }
+  }
+
   spawnFood(room);
+
+  const remainingIds = Object.keys(room.players);
+  let winnerId = remainingIds.find((id) => room.players[id].score >= 500) || null;
+  if (!winnerId && remainingIds.length === 1 && room.gameStarted) {
+    winnerId = remainingIds[0];
+  }
+
+  if (winnerId) {
+    room.gameStarted = false;
+    stopRoomLoop(roomCode);
+    io.to(roomCode).emit("game-over", { winner: winnerId });
+  }
+
   io.to(roomCode).emit("game-state", buildRoomState(roomCode));
 }
 
@@ -193,7 +231,10 @@ function stopRoomLoop(roomCode) {
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
-  socket.on("join-room", (roomCode) => {
+  socket.on("join-room", (payload) => {
+    const roomCode = typeof payload === "string" ? payload : payload?.roomCode;
+    const playerData = typeof payload === "object" ? payload?.playerData || {} : {};
+    if (!roomCode) return;
     console.log("Joining room:", roomCode);
     const room = getOrCreateRoom(roomCode);
     if (Object.keys(room.players).length >= MAX_PLAYERS && !room.players[socket.id]) {
@@ -201,7 +242,7 @@ io.on("connection", (socket) => {
       return;
     }
     if (!room.hostId) room.hostId = socket.id;
-    room.players[socket.id] = room.players[socket.id] || createPlayer(socket.id);
+    room.players[socket.id] = room.players[socket.id] || createPlayer(socket.id, playerData);
     spawnFood(room);
 
     socket.join(roomCode);

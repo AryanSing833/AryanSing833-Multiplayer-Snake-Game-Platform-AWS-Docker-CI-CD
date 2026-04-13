@@ -87,11 +87,11 @@ class SocketService {
    * @param {string} roomCode - 6-character room code
    * @param {object} playerData - { name, avatar }
    */
-  joinRoom(roomCode) {
+  joinRoom(roomCode, playerData) {
     if (!this.socket) return;
     const emitJoinRoom = () => {
       console.log("Joining room:", roomCode);
-      this.socket.emit("join-room", roomCode);
+      this.socket.emit("join-room", { roomCode, playerData });
     };
 
     if (this.socket.connected) {
@@ -135,6 +135,10 @@ class SocketService {
 
   onGameStarted(callback) {
     this._on("game-started", callback);
+  }
+
+  onGameOver(callback) {
+    this._on("game-over", callback);
   }
 
   onPong(callback) {

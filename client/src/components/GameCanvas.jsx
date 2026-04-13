@@ -7,8 +7,6 @@
 
 import { useRef, useEffect, useState } from 'react';
 
-const GRID_SIZE = 20;
-
 export default function GameCanvas({ onInit, className = '' }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -16,11 +14,10 @@ export default function GameCanvas({ onInit, className = '' }) {
 
   useEffect(() => {
     const updateCanvasSize = () => {
-      const cols = Math.max(20, Math.floor(window.innerWidth / GRID_SIZE));
-      const rows = Math.max(20, Math.floor(window.innerHeight / GRID_SIZE));
+      const size = Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.9);
       setSize({
-        width: cols * GRID_SIZE,
-        height: rows * GRID_SIZE,
+        width: size,
+        height: size,
       });
     };
 

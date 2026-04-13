@@ -22,6 +22,12 @@ export default function RoomPage() {
   const [players, setPlayers] = useState([]);
   const [isHost, setIsHost] = useState(false);
   const [joined, setJoined] = useState(false);
+  const [profileReady, setProfileReady] = useState(false);
+  const [playerData, setPlayerData] = useState({
+    name: "",
+    age: "",
+    color: "#00ffcc",
+  });
   const { connected, socket } = useSocket({ autoConnect: true });
 
   const copyCode = async (roomCode) => {
@@ -39,9 +45,9 @@ export default function RoomPage() {
 
   // Join room and sync full room user list from backend
   useEffect(() => {
-    if (!connected || !code) return;
+    if (!connected || !code || !profileReady) return;
 
-    socket.joinRoom(code);
+    socket.joinRoom(code, playerData);
     socket.onRoomUsers(({ users, hostId }) => {
       setJoined(true);
       setIsHost(socket.getId() === hostId);
@@ -66,7 +72,7 @@ export default function RoomPage() {
     return () => {
       socket.removeAllListeners();
     };
-  }, [connected, code, socket, user, navigate]);
+  }, [connected, code, socket, user, navigate, profileReady, playerData]);
 
   const handleCopyCode = async () => {
     await copyCode(code);
@@ -77,6 +83,14 @@ export default function RoomPage() {
 
   const handleStartGame = () => {
     socket.startMultiplayerGame(code);
+  };
+
+  const handleSaveProfile = () => {
+    if (!playerData.name.trim()) {
+      alert("Enter your name");
+      return;
+    }
+    setProfileReady(true);
   };
 
   const handleJoinGame = () => {
@@ -104,6 +118,40 @@ export default function RoomPage() {
       <Navbar />
 
       <main className="relative z-10 pt-20 pb-10 px-4 sm:px-6 max-w-lg mx-auto flex flex-col items-center gap-8">
+        {!profileReady && (
+          <div className="glass-card w-full p-5 flex flex-col gap-3">
+            <h3 className="text-sm font-bold tracking-[0.15em]" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-accent2)' }}>
+              PLAYER SETUP
+            </h3>
+            <input
+              value={playerData.name}
+              onChange={(e) => setPlayerData((p) => ({ ...p, name: e.target.value }))}
+              className="input-neon"
+              placeholder="Name"
+              maxLength={20}
+            />
+            <input
+              value={playerData.age}
+              onChange={(e) => setPlayerData((p) => ({ ...p, age: e.target.value.replace(/\D/g, "").slice(0, 3) }))}
+              className="input-neon"
+              placeholder="Age"
+              inputMode="numeric"
+            />
+            <label className="text-xs" style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-text-dim)' }}>
+              Snake Color
+            </label>
+            <input
+              type="color"
+              value={playerData.color}
+              onChange={(e) => setPlayerData((p) => ({ ...p, color: e.target.value }))}
+              className="h-10 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg-secondary)]"
+            />
+            <button onClick={handleSaveProfile} className="btn-filled w-full py-3 text-sm">
+              SAVE & JOIN ROOM
+            </button>
+          </div>
+        )}
+
         {/* Room Header */}
         <motion.div
           className="text-center animate-slide-up"
@@ -272,7 +320,7 @@ export default function RoomPage() {
 
         {/* Action Buttons */}
         <div className="flex flex-col gap-3 w-full animate-slide-up stagger-3">
-          {joined && (
+          {joined && !isHost && (
             <motion.button
               onClick={handleJoinGame}
               className="btn-neon w-full py-3 text-sm"
@@ -282,7 +330,7 @@ export default function RoomPage() {
               <span className="relative z-10">JOIN GAME</span>
             </motion.button>
           )}
-          {isHost && (
+          {isHost && joined && (
             <motion.button
               onClick={handleStartGame}
               className="btn-filled w-full py-3.5 text-sm"
