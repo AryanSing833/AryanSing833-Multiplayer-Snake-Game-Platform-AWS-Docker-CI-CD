@@ -1,0 +1,331 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ═══════════════════════════════════════════════════════════════
+   SNAKE.IO Design System
+   Theme: Dark Cyberpunk / Neon Gaming
+   Fonts: Orbitron (display), Share Tech Mono (code/data), Inter (body)
+═══════════════════════════════════════════════════════════════ */
+
+/* ── CSS Variables ────────────────────────────────────────── */
+:root {
+  --color-bg-primary: #050a0e;
+  --color-bg-secondary: #0b1318;
+  --color-bg-tertiary: #111d24;
+  --color-bg-card: rgba(11, 19, 24, 0.8);
+  --color-bg-glass: rgba(11, 19, 24, 0.6);
+
+  --color-border: #1a3040;
+  --color-border-glow: #00ff88;
+
+  --color-accent: #00ff88;
+  --color-accent-dim: #00cc6a;
+  --color-accent2: #00ccff;
+  --color-accent2-dim: #0099cc;
+  --color-danger: #ff4466;
+  --color-warning: #ffb700;
+
+  --color-text: #c8e0d0;
+  --color-text-bright: #e8fff0;
+  --color-text-dim: #4a7060;
+  --color-text-muted: #2a4a3a;
+
+  --font-display: 'Orbitron', monospace;
+  --font-mono: 'Share Tech Mono', monospace;
+  --font-body: 'Inter', sans-serif;
+}
+
+/* ── Base Styles ──────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--color-bg-primary);
+  color: var(--color-text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* ── Scrollbar Styling ───────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg-primary);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-accent-dim);
+}
+
+/* ── Neon Glow Effects ───────────────────────────────────── */
+.neon-text {
+  color: var(--color-accent);
+  text-shadow:
+    0 0 7px rgba(0, 255, 136, 0.6),
+    0 0 20px rgba(0, 255, 136, 0.4),
+    0 0 40px rgba(0, 255, 136, 0.2);
+}
+
+.neon-text-blue {
+  color: var(--color-accent2);
+  text-shadow:
+    0 0 7px rgba(0, 204, 255, 0.6),
+    0 0 20px rgba(0, 204, 255, 0.4),
+    0 0 40px rgba(0, 204, 255, 0.2);
+}
+
+.neon-border {
+  border: 1px solid var(--color-accent);
+  box-shadow:
+    0 0 10px rgba(0, 255, 136, 0.15),
+    inset 0 0 10px rgba(0, 255, 136, 0.05);
+}
+
+/* ── Glass Card Effect ───────────────────────────────────── */
+.glass-card {
+  background: var(--color-bg-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(26, 48, 64, 0.6);
+  border-radius: 16px;
+}
+
+.glass-card-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card-hover:hover {
+  border-color: var(--color-accent);
+  box-shadow:
+    0 0 30px rgba(0, 255, 136, 0.1),
+    0 8px 32px rgba(0, 0, 0, 0.4);
+  transform: translateY(-4px);
+}
+
+/* ── Animated Background Grid ────────────────────────────── */
+.bg-grid {
+  background-image:
+    linear-gradient(rgba(26, 48, 64, 0.3) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(26, 48, 64, 0.3) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: center center;
+}
+
+/* ── Scanline CRT Overlay ────────────────────────────────── */
+.scanlines::after {
+  content: '';
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 3px,
+    rgba(0, 0, 0, 0.12) 3px,
+    rgba(0, 0, 0, 0.12) 4px
+  );
+  opacity: 0.35;
+}
+
+/* ── Keyframe Animations ─────────────────────────────────── */
+@keyframes particle-float {
+  0% {
+    transform: translateY(100vh) scale(0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-10vh) scale(1);
+    opacity: 0;
+  }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 6px var(--color-accent); }
+  50% { box-shadow: 0 0 16px var(--color-accent); }
+}
+
+@keyframes border-glow {
+  0%, 100% {
+    border-color: rgba(0, 255, 136, 0.3);
+    box-shadow: 0 0 10px rgba(0, 255, 136, 0.1);
+  }
+  50% {
+    border-color: rgba(0, 255, 136, 0.7);
+    box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+  }
+}
+
+/* ── Animation Utility Classes ───────────────────────────── */
+.animate-glitch {
+  animation: glitch 4s infinite;
+}
+
+@keyframes glitch {
+  0%, 90%, 100% {
+    text-shadow:
+      0 0 20px rgba(0, 255, 136, 0.8),
+      0 0 60px rgba(0, 255, 136, 0.3),
+      2px 0 0 rgba(255, 68, 102, 0.4),
+      -2px 0 0 rgba(0, 204, 255, 0.4);
+    transform: none;
+  }
+  92% {
+    transform: translate(-3px, 1px);
+    text-shadow: 4px 0 0 rgba(255, 68, 102, 0.9), -4px 0 0 rgba(0, 204, 255, 0.9);
+  }
+  94% {
+    transform: translate(3px, -1px);
+    text-shadow: -4px 0 0 rgba(255, 68, 102, 0.9), 4px 0 0 rgba(0, 204, 255, 0.9);
+  }
+  96% {
+    transform: translate(-1px, 0);
+  }
+}
+
+/* ── Stagger Animation Delays ────────────────────────────── */
+.stagger-1 { animation-delay: 0.1s; }
+.stagger-2 { animation-delay: 0.2s; }
+.stagger-3 { animation-delay: 0.3s; }
+.stagger-4 { animation-delay: 0.4s; }
+.stagger-5 { animation-delay: 0.5s; }
+
+/* ── Button Styles ───────────────────────────────────────── */
+.btn-neon {
+  position: relative;
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  padding: 0.85rem 2rem;
+  background: transparent;
+  color: var(--color-accent);
+  border: 2px solid var(--color-accent);
+  cursor: pointer;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  border-radius: 4px;
+}
+
+.btn-neon::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--color-accent);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.3s ease;
+  z-index: 0;
+}
+
+.btn-neon:hover:not(:disabled)::before {
+  transform: scaleX(1);
+}
+
+.btn-neon:hover:not(:disabled) {
+  color: var(--color-bg-primary);
+  box-shadow: 0 0 30px rgba(0, 255, 136, 0.4);
+}
+
+.btn-neon > * {
+  position: relative;
+  z-index: 1;
+}
+
+.btn-neon:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  border-color: var(--color-text-dim);
+  color: var(--color-text-dim);
+}
+
+.btn-filled {
+  position: relative;
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 0.85rem 2rem;
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-dim));
+  color: var(--color-bg-primary);
+  border: none;
+  cursor: pointer;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  border-radius: 4px;
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.2);
+}
+
+.btn-filled:hover:not(:disabled) {
+  box-shadow: 0 0 40px rgba(0, 255, 136, 0.5);
+  transform: translateY(-2px);
+}
+
+.btn-filled:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Input Styles ────────────────────────────────────────── */
+.input-neon {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  letter-spacing: 0.2em;
+  padding: 0.75rem 1rem;
+  background: var(--color-bg-secondary);
+  color: var(--color-text-bright);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  outline: none;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+}
+
+.input-neon::placeholder {
+  color: var(--color-text-dim);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.input-neon:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 15px rgba(0, 255, 136, 0.15);
+}
+
+/* ── Canvas Wrapper ──────────────────────────────────────── */
+.canvas-gradient-border {
+  position: relative;
+  padding: 3px;
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent2), var(--color-accent));
+  box-shadow:
+    0 0 30px rgba(0, 255, 136, 0.25),
+    0 0 80px rgba(0, 204, 255, 0.1);
+  border-radius: 4px;
+}

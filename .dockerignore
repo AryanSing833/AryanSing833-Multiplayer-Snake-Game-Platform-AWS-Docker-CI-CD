@@ -1,0 +1,30 @@
+# Dependencies
+node_modules
+client/node_modules
+
+# Git
+.git
+.github
+.gitignore
+
+# Environment files (secrets — don't bake into image)
+client/.env
+.env
+
+# IDE / OS
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Keys (NEVER put in Docker image)
+*.pem
+*.key
+
+
+
+# Docs
+README.md
+*.md

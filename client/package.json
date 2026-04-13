@@ -1,0 +1,24 @@
+{
+  "name": "snake-io-client",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "SNAKE.IO — Modern multiplayer snake game platform frontend",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "autoprefixer": "^10.4.27",
+    "firebase": "^12.12.0",
+    "postcss": "^8.5.9",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "react-router-dom": "^7.14.0",
+    "socket.io-client": "^4.8.3",
+    "tailwindcss": "^3.4.19",
+    "vite": "^5.4.21"
+  }
+}
