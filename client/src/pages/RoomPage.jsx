@@ -9,7 +9,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { motion } from 'framer-motion';
 import Navbar from '../components/Navbar';
+import { useSocket } from '../hooks/useSocket';
 
 export default function RoomPage() {
   const { code } = useParams();
@@ -20,36 +22,55 @@ export default function RoomPage() {
 
   const [copied, setCopied] = useState(false);
   const [players, setPlayers] = useState([]);
+  const { connected, socket } = useSocket({ autoConnect: true });
 
-  // Simulate host player
-  useEffect(() => {
-    if (user) {
-      setPlayers([
-        {
-          id: 'self',
-          name: user.name || 'Player',
-          avatar: user.photoURL,
-          isHost,
-          isReady: true,
-        },
-      ]);
-    }
-  }, [user, isHost]);
-
-  const handleCopyCode = async () => {
+  const copyCode = async (roomCode) => {
     try {
-      await navigator.clipboard.writeText(code);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(roomCode);
     } catch {
-      // Fallback
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      const textarea = document.createElement("textarea");
+      textarea.value = roomCode;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
     }
   };
 
+  // Join room and sync full room user list from backend
+  useEffect(() => {
+    if (!connected || !code) return;
+
+    socket.joinRoom(code);
+    socket.onRoomUsers((users) => {
+      setPlayers(
+        users.map((id, index) => ({
+          id,
+          name: id === socket.getId() ? (user?.name || 'You') : `Player ${id.slice(0, 4).toUpperCase()}`,
+          avatar: id === socket.getId() ? user?.photoURL : null,
+          isHost: index === 0,
+          isReady: true,
+        }))
+      );
+    });
+    socket.onGameStarted(() => {
+      navigate(`/game?mode=multiplayer&room=${code}`);
+    });
+
+    return () => {
+      socket.removeAllListeners();
+    };
+  }, [connected, code, socket, user, navigate]);
+
+  const handleCopyCode = async () => {
+    await copyCode(code);
+    alert("Copied!");
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const handleStartGame = () => {
-    navigate(`/game?mode=multiplayer&room=${code}`);
+    socket.startMultiplayerGame(code);
   };
 
   const handleLeave = () => {
@@ -73,7 +94,12 @@ export default function RoomPage() {
 
       <main className="relative z-10 pt-20 pb-10 px-4 sm:px-6 max-w-lg mx-auto flex flex-col items-center gap-8">
         {/* Room Header */}
-        <div className="text-center animate-slide-up">
+        <motion.div
+          className="text-center animate-slide-up"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
           <h1
             className="text-2xl font-bold tracking-[0.1em] mb-2"
             style={{ fontFamily: 'var(--font-display)', color: 'var(--color-text-bright)' }}
@@ -86,7 +112,7 @@ export default function RoomPage() {
           >
             {isHost ? 'SHARE THE CODE WITH FRIENDS' : 'WAITING FOR HOST TO START'}
           </p>
-        </div>
+        </motion.div>
 
         {/* Room Code Display */}
         <div
@@ -128,9 +154,10 @@ export default function RoomPage() {
           </div>
 
           {/* Copy Button */}
-          <button
+          <motion.button
             onClick={handleCopyCode}
             className="flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-300 cursor-pointer"
+            whileHover={{ scale: 1.05 }}
             style={{
               fontFamily: 'var(--font-mono)',
               fontSize: '0.75rem',
@@ -142,7 +169,7 @@ export default function RoomPage() {
             id="copy-code-btn"
           >
             {copied ? '✓ COPIED!' : '📋 COPY CODE'}
-          </button>
+          </motion.button>
         </div>
 
         {/* Players List */}
@@ -166,9 +193,11 @@ export default function RoomPage() {
 
           {/* Player Entries */}
           {players.map((player) => (
-            <div
+            <motion.div
               key={player.id}
               className="flex items-center gap-3 py-2 px-3 rounded-lg"
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
               style={{ background: 'rgba(0, 204, 255, 0.03)' }}
             >
               {player.avatar ? (
@@ -210,7 +239,7 @@ export default function RoomPage() {
               >
                 {player.isReady ? 'READY' : 'WAITING'}
               </span>
-            </div>
+            </motion.div>
           ))}
 
           {/* Waiting indicator */}
@@ -233,21 +262,23 @@ export default function RoomPage() {
         {/* Action Buttons */}
         <div className="flex flex-col gap-3 w-full animate-slide-up stagger-3">
           {isHost && (
-            <button
+            <motion.button
               onClick={handleStartGame}
               className="btn-filled w-full py-3.5 text-sm"
+              whileHover={{ scale: 1.05 }}
               id="start-game-btn"
             >
               ▶ START GAME
-            </button>
+            </motion.button>
           )}
-          <button
+          <motion.button
             onClick={handleLeave}
             className="btn-neon w-full py-3 text-sm"
+            whileHover={{ scale: 1.05 }}
             id="leave-room-btn"
           >
             <span className="relative z-10">← LEAVE ROOM</span>
-          </button>
+          </motion.button>
         </div>
       </main>
     </div>

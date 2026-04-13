@@ -25,9 +25,7 @@ class SocketService {
    * @param {string} serverUrl - Server URL (defaults to env variable)
    */
   connect(serverUrl) {
-    const url = serverUrl || import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000';
-
-    this.socket = io(url, {
+    this.socket = io(window.location.origin, {
       autoConnect: true,
       reconnection: true,
       reconnectionAttempts: 5,
@@ -89,9 +87,27 @@ class SocketService {
    * @param {string} roomCode - 6-character room code
    * @param {object} playerData - { name, avatar }
    */
-  joinRoom(roomCode, playerData) {
+  joinRoom(roomCode) {
     if (!this.socket) return;
-    this.socket.emit('joinRoom', { roomCode, ...playerData });
+    const emitJoinRoom = () => {
+      console.log("Joining room:", roomCode);
+      this.socket.emit("join-room", roomCode);
+    };
+
+    if (this.socket.connected) {
+      emitJoinRoom();
+      return;
+    }
+
+    this.socket.once("connect", () => {
+      console.log("Connected:", this.socket.id);
+      emitJoinRoom();
+    });
+  }
+
+  startMultiplayerGame(roomCode) {
+    if (!this.socket) return;
+    this.socket.emit("start-game", roomCode);
   }
 
   /**
@@ -129,6 +145,23 @@ class SocketService {
     this._on('state', callback);
   }
 
+  onMultiplayerGameState(callback) {
+    this._on("game-state", callback);
+  }
+
+  onGameStarted(callback) {
+    this._on("game-started", callback);
+  }
+
+  onPong(callback) {
+    this._on("pong-check", callback);
+  }
+
+  sendPing(clientTs) {
+    if (!this.socket) return;
+    this.socket.emit("ping-check", clientTs);
+  }
+
   /**
    * Listen for room creation confirmation
    * @param {function} callback - Called with { roomCode, players }
@@ -138,11 +171,19 @@ class SocketService {
   }
 
   /**
+   * Listen for full room user list updates
+   * @param {function} callback - Called with string[] of socket IDs
+   */
+  onRoomUsers(callback) {
+    this._on("room-users", callback);
+  }
+
+  /**
    * Listen for a player joining the room
    * @param {function} callback - Called with { player, players }
    */
   onPlayerJoined(callback) {
-    this._on('playerJoined', callback);
+    this._on('player-joined', callback);
   }
 
   /**

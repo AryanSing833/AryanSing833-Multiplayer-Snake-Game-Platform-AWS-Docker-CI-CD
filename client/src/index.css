@@ -251,6 +251,7 @@ body {
 .btn-neon:hover:not(:disabled) {
   color: var(--color-bg-primary);
   box-shadow: 0 0 30px rgba(0, 255, 136, 0.4);
+  animation: glow 0.8s ease-in-out infinite alternate;
 }
 
 .btn-neon > * {
@@ -286,6 +287,19 @@ body {
 .btn-filled:hover:not(:disabled) {
   box-shadow: 0 0 40px rgba(0, 255, 136, 0.5);
   transform: translateY(-2px);
+}
+
+button:hover:not(:disabled) {
+  transform: scale(1.05);
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+@keyframes glow {
+  0% { box-shadow: 0 0 5px #0ff; }
+  100% { box-shadow: 0 0 20px #0ff; }
 }
 
 .btn-filled:disabled {

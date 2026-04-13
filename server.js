@@ -11,9 +11,9 @@ const path = require("path");
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const GRID_SIZE = 20;          // Grid dimensions (20×20)
-const TICK_RATE = 120;         // Game loop interval in ms (~8 ticks/sec)
-const FOOD_COUNT = 5;          // Max simultaneous food items
+const GRID_SIZE = 20;
+const TICK_RATE = 40;
+const FOOD_COUNT = 3;
 
 // Palette for snake colors — one per player slot
 const SNAKE_COLORS = [
@@ -37,7 +37,10 @@ const OPPOSITES = { UP: "DOWN", DOWN: "UP", LEFT: "RIGHT", RIGHT: "LEFT" };
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: "*" },
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
 });
 
 const clientDistPath = "/app/client/dist";
@@ -55,237 +58,206 @@ app.get("*", (req, res) => {
   res.sendFile(path.join(clientDistPath, "index.html"));
 });
 
-// ─── Game State ────────────────────────────────────────────────────────────────
+// ─── Authoritative Room State ─────────────────────────────────────────────────
 
-/**
- * players: Map<socketId, PlayerState>
- * PlayerState: { id, name, color, direction, nextDirection, snake: [{x,y}], score, alive }
- */
-const players = new Map();
-
-/**
- * food: Array<{x, y, id}>
- */
-let food = [];
-
+const rooms = {};
+const socketToRoom = new Map();
 let colorIndex = 0;
 
-// ─── Utility Functions ─────────────────────────────────────────────────────────
-
-/** Returns a random integer in [0, max) */
 function randInt(max) {
   return Math.floor(Math.random() * max);
 }
 
-/** Checks whether a cell {x,y} is occupied by any snake segment */
-function isCellOccupied(x, y) {
-  for (const player of players.values()) {
-    if (!player.alive) continue;
-    for (const seg of player.snake) {
-      if (seg.x === x && seg.y === y) return true;
-    }
-  }
-  return false;
+function createPlayer(socketId) {
+  const x = randInt(GRID_SIZE);
+  const y = randInt(GRID_SIZE);
+  const color = SNAKE_COLORS[colorIndex % SNAKE_COLORS.length];
+  colorIndex++;
+  return {
+    id: socketId,
+    x,
+    y,
+    direction: { ...DIRECTIONS.RIGHT },
+    body: [
+      { x, y },
+      { x: Math.max(0, x - 1), y },
+    ],
+    score: 0,
+    color,
+    alive: true,
+  };
 }
 
-/** Spawns a single food item at an unoccupied cell */
-function spawnFood() {
-  let attempts = 0;
-  while (attempts < 200) {
-    const x = randInt(GRID_SIZE);
-    const y = randInt(GRID_SIZE);
-    const occupied = isCellOccupied(x, y);
-    const duplicate = food.some(f => f.x === x && f.y === y);
-    if (!occupied && !duplicate) {
-      food.push({ x, y, id: `${Date.now()}-${Math.random()}` });
-      return;
-    }
-    attempts++;
-  }
-}
-
-/** Fills food array up to FOOD_COUNT */
-function replenishFood() {
-  while (food.length < FOOD_COUNT) {
-    spawnFood();
-  }
-}
-
-/** Returns a safe random spawn position (not occupied) */
-function getSpawnPosition() {
-  let attempts = 0;
-  while (attempts < 500) {
-    const x = randInt(GRID_SIZE);
-    const y = randInt(GRID_SIZE);
-    if (!isCellOccupied(x, y)) return { x, y };
-    attempts++;
-  }
-  // Fallback — grid may be nearly full, pick anything
-  return { x: randInt(GRID_SIZE), y: randInt(GRID_SIZE) };
-}
-
-/** Creates a fresh snake for a new / respawned player */
-function createSnake(spawnPos) {
-  return [
-    { ...spawnPos },
-    { x: spawnPos.x, y: (spawnPos.y + 1) % GRID_SIZE }, // body starts below head
-  ];
-}
-
-/** Resets (respawns) a player after collision */
-function respawnPlayer(player) {
-  const pos = getSpawnPosition();
-  player.snake = createSnake(pos);
-  player.direction = "UP";
-  player.nextDirection = "UP";
-  player.score = 0;
-  player.alive = true;
-}
-
-// ─── Game Loop ─────────────────────────────────────────────────────────────────
-
-function gameTick() {
-  for (const player of players.values()) {
-    if (!player.alive) {
-      // Brief dead pause — respawn after 1 tick (immediate for simplicity)
-      respawnPlayer(player);
-      continue;
-    }
-
-    // Apply queued direction (ignore reversal)
-    if (player.nextDirection !== OPPOSITES[player.direction]) {
-      player.direction = player.nextDirection;
-    }
-
-    const delta = DIRECTIONS[player.direction];
-    const head = player.snake[0];
-
-    // Calculate new head position
-    const newHead = {
-      x: head.x + delta.x,
-      y: head.y + delta.y,
+function getOrCreateRoom(roomCode) {
+  if (!rooms[roomCode]) {
+    rooms[roomCode] = {
+      players: {},
+      food: [],
+      gameStarted: false,
+      hostId: null,
+      interval: null,
     };
-
-    // ── Wall Collision ──────────────────────────────────────────────────────
-    if (
-      newHead.x < 0 || newHead.x >= GRID_SIZE ||
-      newHead.y < 0 || newHead.y >= GRID_SIZE
-    ) {
-      player.alive = false;
-      continue;
-    }
-
-    // ── Self Collision ──────────────────────────────────────────────────────
-    // Exclude the tail tip because it will move away this tick
-    const bodyWithoutTail = player.snake.slice(0, player.snake.length - 1);
-    const selfCollision = bodyWithoutTail.some(
-      seg => seg.x === newHead.x && seg.y === newHead.y
-    );
-    if (selfCollision) {
-      player.alive = false;
-      continue;
-    }
-
-    // ── Other Player Collision ──────────────────────────────────────────────
-    let hitOther = false;
-    for (const other of players.values()) {
-      if (other.id === player.id || !other.alive) continue;
-      for (const seg of other.snake) {
-        if (seg.x === newHead.x && seg.y === newHead.y) {
-          hitOther = true;
-          break;
-        }
-      }
-      if (hitOther) break;
-    }
-    if (hitOther) {
-      player.alive = false;
-      continue;
-    }
-
-    // ── Move Snake ──────────────────────────────────────────────────────────
-    player.snake.unshift(newHead);
-
-    // ── Food Consumption ────────────────────────────────────────────────────
-    const foodIdx = food.findIndex(f => f.x === newHead.x && f.y === newHead.y);
-    if (foodIdx !== -1) {
-      food.splice(foodIdx, 1); // Remove eaten food
-      player.score += 10;
-      replenishFood();          // Immediately spawn replacement
-      // Do NOT pop tail — snake grows
-    } else {
-      player.snake.pop();       // Normal move — advance without growing
-    }
   }
-
-  // Broadcast authoritative state to all clients
-  broadcastState();
+  return rooms[roomCode];
 }
 
-/** Serialises and emits game state to every connected client */
-function broadcastState() {
-  const state = {
-    players: Array.from(players.values()).map(p => ({
-      id:        p.id,
-      name:      p.name,
-      color:     p.color,
-      snake:     p.snake,
-      score:     p.score,
-      alive:     p.alive,
-      direction: p.direction,
-    })),
-    food,
+function spawnFood(room) {
+  while (room.food.length < FOOD_COUNT) {
+    room.food.push({ x: randInt(GRID_SIZE), y: randInt(GRID_SIZE), id: `${Date.now()}-${Math.random()}` });
+  }
+}
+
+function buildRoomState(roomCode) {
+  const room = rooms[roomCode];
+  return {
+    roomCode,
+    gameStarted: room.gameStarted,
+    tickRate: TICK_RATE,
     gridSize: GRID_SIZE,
+    food: room.food,
+    players: Object.keys(room.players).reduce((acc, id) => {
+      const p = room.players[id];
+      acc[id] = {
+        id: p.id,
+        snake: p.body,
+        direction: p.direction,
+        score: p.score,
+        color: p.color,
+        alive: p.alive,
+        name: `Player ${p.id.slice(0, 4).toUpperCase()}`,
+      };
+      return acc;
+    }, {}),
     timestamp: Date.now(),
   };
-  io.emit("state", state);
 }
 
-// Start the server-authoritative game loop
-const gameLoop = setInterval(gameTick, TICK_RATE);
+function tickRoom(roomCode) {
+  const room = rooms[roomCode];
+  if (!room || !room.gameStarted) return;
+
+  const players = Object.values(room.players);
+  if (players.length === 0) return;
+
+  for (const player of players) {
+    player.x += player.direction.x;
+    player.y += player.direction.y;
+    const nextHead = { x: player.x, y: player.y };
+
+    if (nextHead.x < 0) nextHead.x = GRID_SIZE - 1;
+    if (nextHead.x >= GRID_SIZE) nextHead.x = 0;
+    if (nextHead.y < 0) nextHead.y = GRID_SIZE - 1;
+    if (nextHead.y >= GRID_SIZE) nextHead.y = 0;
+
+    const hitSelf = player.body.some((seg) => seg.x === nextHead.x && seg.y === nextHead.y);
+    if (hitSelf) {
+      player.alive = false;
+      continue;
+    }
+
+    player.body.unshift(nextHead);
+    player.x = nextHead.x;
+    player.y = nextHead.y;
+
+    const foodIdx = room.food.findIndex((f) => f.x === nextHead.x && f.y === nextHead.y);
+    if (foodIdx >= 0) {
+      room.food.splice(foodIdx, 1);
+      player.score += 10;
+    } else {
+      player.body.pop();
+    }
+    player.alive = true;
+  }
+
+  spawnFood(room);
+  io.to(roomCode).emit("game-state", buildRoomState(roomCode));
+}
+
+function startRoomLoop(roomCode) {
+  const room = rooms[roomCode];
+  if (!room || room.interval) return;
+  room.interval = setInterval(() => tickRoom(roomCode), TICK_RATE);
+}
+
+function stopRoomLoop(roomCode) {
+  const room = rooms[roomCode];
+  if (!room || !room.interval) return;
+  clearInterval(room.interval);
+  room.interval = null;
+}
 
 // ─── Socket.IO Events ──────────────────────────────────────────────────────────
 
 io.on("connection", (socket) => {
-  console.log(`[+] Player connected: ${socket.id}`);
+  console.log("User connected:", socket.id);
 
-  // Assign color and create player
-  const color = SNAKE_COLORS[colorIndex % SNAKE_COLORS.length];
-  colorIndex++;
+  socket.on("join-room", (roomCode) => {
+    console.log("Joining room:", roomCode);
+    const room = getOrCreateRoom(roomCode);
+    if (!room.hostId) room.hostId = socket.id;
+    room.players[socket.id] = room.players[socket.id] || createPlayer(socket.id);
+    spawnFood(room);
 
-  const spawnPos = getSpawnPosition();
-  const player = {
-    id:            socket.id,
-    name:          `Player ${socket.id.slice(0, 4).toUpperCase()}`,
-    color,
-    direction:     "UP",
-    nextDirection: "UP",
-    snake:         createSnake(spawnPos),
-    score:         0,
-    alive:         true,
-  };
+    socket.join(roomCode);
+    socketToRoom.set(socket.id, roomCode);
 
-  players.set(socket.id, player);
-  replenishFood();
+    const clients = Array.from(io.sockets.adapter.rooms.get(roomCode) || []);
+    console.log("Users in room:", clients);
+    io.to(roomCode).emit("room-users", clients);
+    io.to(roomCode).emit("player-joined", socket.id);
+    io.to(roomCode).emit("game-state", buildRoomState(roomCode));
+  });
 
-  // Confirm identity to the joining client
-  socket.emit("init", { playerId: socket.id, gridSize: GRID_SIZE });
+  socket.on("start-game", (roomCode) => {
+    const room = rooms[roomCode];
+    if (!room || room.hostId !== socket.id) return;
+    room.gameStarted = true;
+    startRoomLoop(roomCode);
+    io.to(roomCode).emit("game-started");
+  });
 
-  // ── Input: Direction Change ─────────────────────────────────────────────
   socket.on("move", (direction) => {
-    if (!DIRECTIONS[direction]) return; // Ignore invalid payloads
-    const p = players.get(socket.id);
-    if (!p || !p.alive) return;
-    // Queue the direction; reversal guard is applied in gameTick
-    if (direction !== OPPOSITES[p.direction]) {
-      p.nextDirection = direction;
+    const nextDirection = DIRECTIONS[direction];
+    if (!nextDirection) return;
+    const roomCode = socketToRoom.get(socket.id);
+    if (!roomCode || !rooms[roomCode]) return;
+    const player = rooms[roomCode].players[socket.id];
+    if (!player) return;
+    const currentDirectionKey = Object.keys(DIRECTIONS).find(
+      (key) => DIRECTIONS[key].x === player.direction.x && DIRECTIONS[key].y === player.direction.y
+    );
+    if (currentDirectionKey && direction !== OPPOSITES[currentDirectionKey]) {
+      player.direction = { ...nextDirection };
     }
   });
 
-  // ── Disconnect ──────────────────────────────────────────────────────────
+  socket.on("ping-check", (clientTs) => {
+    socket.emit("pong-check", {
+      clientTs,
+      serverTs: Date.now(),
+      tickRate: TICK_RATE,
+    });
+  });
+
   socket.on("disconnect", () => {
     console.log(`[-] Player disconnected: ${socket.id}`);
-    players.delete(socket.id);
+    const roomCode = socketToRoom.get(socket.id);
+    if (!roomCode || !rooms[roomCode]) return;
+    const room = rooms[roomCode];
+    delete room.players[socket.id];
+    socketToRoom.delete(socket.id);
+
+    if (room.hostId === socket.id) {
+      room.hostId = Object.keys(room.players)[0] || null;
+    }
+
+    const clients = Array.from(io.sockets.adapter.rooms.get(roomCode) || []);
+    io.to(roomCode).emit("room-users", clients);
+
+    if (Object.keys(room.players).length === 0) {
+      stopRoomLoop(roomCode);
+      delete rooms[roomCode];
+    }
   });
 });
 
@@ -298,6 +270,6 @@ server.listen(PORT, "0.0.0.0", () => {
 
 // Graceful shutdown
 process.on("SIGTERM", () => {
-  clearInterval(gameLoop);
+  Object.keys(rooms).forEach((roomCode) => stopRoomLoop(roomCode));
   server.close();
 });

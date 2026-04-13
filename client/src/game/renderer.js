@@ -20,6 +20,8 @@ export class GameRenderer {
     this.cellSize = 0;
     this.animationFrame = null;
     this.pulsePhase = 0;
+    this.particles = [];
+    this.lastFoodIds = new Set();
 
     // Start pulse animation
     this._startPulseAnimation();
@@ -57,7 +59,7 @@ export class GameRenderer {
   render(state) {
     if (!state) return;
 
-    const { snake, food, direction, playerColor, gridSize } = state;
+    const { snake, food, direction, playerColor, gridSize, players, activePlayerId } = state;
     const W = this.canvas.width;
     const H = this.canvas.height;
 
@@ -78,10 +80,24 @@ export class GameRenderer {
 
     // Food
     food.forEach(f => this._renderFood(f.x, f.y));
+    this._emitFoodParticles(food);
+    this._renderParticles();
 
-    // Snake
+    if (players && Object.keys(players).length > 0) {
+      Object.values(players).forEach((player) => {
+        if (player.snake && player.snake.length > 0) {
+          const originalColor = this.playerColor;
+          this.playerColor = player.color || originalColor;
+          this._renderSnake(player.snake, player.direction || 'RIGHT', player.id === activePlayerId);
+          this.playerColor = originalColor;
+        }
+      });
+      return;
+    }
+
+    // Single snake fallback
     if (snake && snake.length > 0) {
-      this._renderSnake(snake, direction);
+      this._renderSnake(snake, direction, true);
     }
   }
 
@@ -175,10 +191,11 @@ export class GameRenderer {
     this.ctx.shadowBlur = 0;
   }
 
-  _renderSnake(snake, direction) {
+  _renderSnake(snake, direction, isActivePlayer = false) {
     const cs = this.cellSize;
     const color = this.playerColor;
     const len = snake.length;
+    const dirKey = this._resolveDirectionKey(direction);
 
     snake.forEach((seg, idx) => {
       const px = seg.x * cs;
@@ -189,7 +206,7 @@ export class GameRenderer {
       // Glow for head
       if (isHead) {
         this.ctx.shadowColor = color;
-        this.ctx.shadowBlur = 16;
+        this.ctx.shadowBlur = isActivePlayer ? 24 : 16;
       } else {
         this.ctx.shadowColor = color;
         this.ctx.shadowBlur = 4;
@@ -206,7 +223,7 @@ export class GameRenderer {
         this.ctx.fill();
 
         // Eyes
-        this._renderEyes(seg, direction, cs);
+        this._renderEyes(seg, dirKey, cs);
       } else {
         // Body segment with slight rounding
         this._roundRect(px + pad, py + pad, cs - pad * 2, cs - pad * 2, 2);
@@ -250,6 +267,56 @@ export class GameRenderer {
       this.ctx.arc(e.x, e.y, eyeR * 0.5, 0, Math.PI * 2);
       this.ctx.fill();
     });
+  }
+
+  _resolveDirectionKey(direction) {
+    if (typeof direction === "string") return direction;
+    if (!direction) return "RIGHT";
+    if (direction.x === 1 && direction.y === 0) return "RIGHT";
+    if (direction.x === -1 && direction.y === 0) return "LEFT";
+    if (direction.x === 0 && direction.y === -1) return "UP";
+    if (direction.x === 0 && direction.y === 1) return "DOWN";
+    return "RIGHT";
+  }
+
+  _emitFoodParticles(food) {
+    const currentIds = new Set(food.map((f) => f.id));
+    this.lastFoodIds.forEach((id) => {
+      if (!currentIds.has(id)) {
+        const pos = this._lastFoodMap?.get(id);
+        if (pos) {
+          for (let i = 0; i < 10; i++) {
+            this.particles.push({
+              x: (pos.x + 0.5) * this.cellSize,
+              y: (pos.y + 0.5) * this.cellSize,
+              vx: (Math.random() - 0.5) * 2.6,
+              vy: (Math.random() - 0.5) * 2.6,
+              life: 18 + Math.floor(Math.random() * 10),
+            });
+          }
+        }
+      }
+    });
+    this._lastFoodMap = new Map(food.map((f) => [f.id, f]));
+    this.lastFoodIds = currentIds;
+  }
+
+  _renderParticles() {
+    const next = [];
+    this.particles.forEach((p) => {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= 1;
+      if (p.life > 0) {
+        const alpha = p.life / 28;
+        this.ctx.fillStyle = `rgba(255, 200, 0, ${alpha})`;
+        this.ctx.beginPath();
+        this.ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2);
+        this.ctx.fill();
+        next.push(p);
+      }
+    });
+    this.particles = next;
   }
 
   _roundRect(x, y, w, h, r) {

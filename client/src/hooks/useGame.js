@@ -129,6 +129,19 @@ export function useGame(options = {}) {
     }
   }, []);
 
+  const stopGame = useCallback(() => {
+    if (engineRef.current) {
+      engineRef.current.reset();
+    }
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (rendererRef.current) {
+      rendererRef.current.destroy();
+    }
+  }, []);
+
   /**
    * Handle window resize
    */
@@ -178,6 +191,7 @@ export function useGame(options = {}) {
     togglePause,
     restartGame,
     resetGame,
+    stopGame,
     handleResize,
     isPlaying: status === GAME_STATUS.PLAYING,
     isPaused: status === GAME_STATUS.PAUSED,

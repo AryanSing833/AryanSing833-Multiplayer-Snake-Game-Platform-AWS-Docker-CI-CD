@@ -5,10 +5,13 @@
  * Supports both solo and multiplayer modes.
  */
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useGame } from '../hooks/useGame';
+import { useSocket } from '../hooks/useSocket';
+import { GameRenderer } from '../game/renderer';
+import { InputHandler } from '../game/input';
 import { GAME_STATUS } from '../game/engine';
 import Navbar from '../components/Navbar';
 import GameCanvas from '../components/GameCanvas';
@@ -22,6 +25,21 @@ export default function GamePage() {
 
   const mode = searchParams.get('mode') || 'classic';
   const roomCode = searchParams.get('room') || null;
+  const isMultiplayer = mode === 'multiplayer';
+  const { socket, connected } = useSocket({ autoConnect: isMultiplayer });
+  const [multiplayerState, setMultiplayerState] = useState(null);
+  const [previousMultiplayerState, setPreviousMultiplayerState] = useState(null);
+  const [multiplayerStarted, setMultiplayerStarted] = useState(false);
+  const [fps, setFps] = useState(0);
+  const [ping, setPing] = useState(null);
+  const [serverTickRate, setServerTickRate] = useState(null);
+  const rendererRef = useRef(null);
+  const multiplayerStateRef = useRef(null);
+  const inputRef = useRef(null);
+  const rafRef = useRef(null);
+  const lastFrameTimeRef = useRef(performance.now());
+  const frameCountRef = useRef(0);
+  const stateReceivedAtRef = useRef(performance.now());
 
   const {
     gameState,
@@ -31,6 +49,7 @@ export default function GamePage() {
     initGame,
     startGame,
     restartGame,
+    stopGame,
     isGameOver,
     isIdle,
     isPaused,
@@ -42,21 +61,149 @@ export default function GamePage() {
 
   // Auto-start when canvas is initialized
   const handleCanvasInit = useCallback((canvas, container) => {
+    if (isMultiplayer) {
+      const renderer = new GameRenderer(canvas, { gridSize: 20 });
+      renderer.resize(container);
+      rendererRef.current = renderer;
+      return;
+    }
     initGame(canvas, container);
-  }, [initGame]);
+  }, [initGame, isMultiplayer]);
 
   // Start game after init
   useEffect(() => {
+    if (isMultiplayer) return;
     if (isIdle && gameState) {
       // Small delay to let the canvas render the initial state
       const timer = setTimeout(() => startGame(), 500);
       return () => clearTimeout(timer);
     }
-  }, [isIdle, gameState, startGame]);
+  }, [isIdle, gameState, startGame, isMultiplayer]);
+
+  useEffect(() => {
+    if (!isMultiplayer || !connected || !roomCode) return;
+
+    socket.joinRoom(roomCode);
+    socket.onGameStarted(() => setMultiplayerStarted(true));
+    socket.onMultiplayerGameState((state) => {
+      setPreviousMultiplayerState(multiplayerStateRef.current);
+      multiplayerStateRef.current = state;
+      setMultiplayerState(state);
+      stateReceivedAtRef.current = performance.now();
+      setServerTickRate(state.tickRate || null);
+    });
+    socket.onPong(({ clientTs, tickRate }) => {
+      setPing(Math.max(0, Math.round(performance.now() - clientTs)));
+      if (tickRate) setServerTickRate(tickRate);
+    });
+
+    inputRef.current = new InputHandler({
+      onDirection: (dir) => {
+        const state = multiplayerStateRef.current;
+        const myId = socket.getId();
+        if (state?.players?.[myId]) {
+          const optimistic = {
+            ...state,
+            players: {
+              ...state.players,
+              [myId]: {
+                ...state.players[myId],
+                direction: dir,
+              },
+            },
+          };
+          multiplayerStateRef.current = optimistic;
+          setMultiplayerState(optimistic);
+        }
+        socket.sendMove(dir);
+      },
+      onPause: () => {},
+      touchTarget: window,
+    });
+
+    const pingTimer = setInterval(() => {
+      socket.sendPing(performance.now());
+    }, 1500);
+
+    return () => {
+      inputRef.current?.destroy();
+      inputRef.current = null;
+      clearInterval(pingTimer);
+    };
+  }, [isMultiplayer, connected, roomCode, socket]);
+
+  const interpolatePlayers = useCallback((prevState, currentState, alpha) => {
+    if (!currentState?.players) return {};
+    const next = {};
+    const currentPlayers = currentState.players;
+    Object.keys(currentPlayers).forEach((id) => {
+      const currentPlayer = currentPlayers[id];
+      const previousPlayer = prevState?.players?.[id];
+      if (!previousPlayer) {
+        next[id] = currentPlayer;
+        return;
+      }
+      const snake = currentPlayer.snake.map((seg, idx) => {
+        const prevSeg = previousPlayer.snake?.[idx] || seg;
+        return {
+          x: prevSeg.x + (seg.x - prevSeg.x) * alpha,
+          y: prevSeg.y + (seg.y - prevSeg.y) * alpha,
+        };
+      });
+      next[id] = { ...currentPlayer, snake };
+    });
+    return next;
+  }, []);
+
+  useEffect(() => {
+    if (!isMultiplayer || !rendererRef.current) return;
+    const animate = () => {
+      const now = performance.now();
+      frameCountRef.current += 1;
+      if (now - lastFrameTimeRef.current >= 1000) {
+        setFps(frameCountRef.current);
+        frameCountRef.current = 0;
+        lastFrameTimeRef.current = now;
+      }
+      if (rendererRef.current && multiplayerStateRef.current) {
+        const tickMs = multiplayerStateRef.current.tickRate || 40;
+        const alpha = Math.min(1, (now - stateReceivedAtRef.current) / tickMs);
+        const interpolatedPlayers = interpolatePlayers(
+          previousMultiplayerState,
+          multiplayerStateRef.current,
+          alpha
+        );
+        rendererRef.current.render({
+          players: interpolatedPlayers,
+          food: multiplayerStateRef.current.food,
+          gridSize: multiplayerStateRef.current.gridSize || 20,
+          activePlayerId: socket.getId(),
+        });
+      }
+      rafRef.current = requestAnimationFrame(animate);
+    };
+    rafRef.current = requestAnimationFrame(animate);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [isMultiplayer, socket, previousMultiplayerState, interpolatePlayers]);
 
   const handleRestart = () => {
+    if (isMultiplayer) return;
     restartGame();
   };
+
+  const handleStop = () => {
+    if (!isMultiplayer) {
+      stopGame();
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    }
+  };
+
+  const multiplayerPlayers = multiplayerState ? Object.values(multiplayerState.players || {}) : [];
 
   const handleBack = () => {
     navigate('/dashboard');
@@ -80,13 +227,13 @@ export default function GamePage() {
         {/* Left Sidebar - HUD (desktop) */}
         <aside className="hidden lg:flex w-[200px] min-w-[180px] flex-shrink-0 pt-2">
           <GameHUD
-            score={score}
+            score={isMultiplayer ? (multiplayerPlayers.find((p) => p.id === socket.getId())?.score || 0) : score}
             highScore={highScore}
-            status={status}
+            status={isMultiplayer ? (multiplayerStarted ? GAME_STATUS.PLAYING : GAME_STATUS.WAITING) : status}
             mode={mode}
             playerName={user?.name?.split(' ')[0] || 'Player'}
             roomCode={roomCode}
-            players={[]}
+            players={isMultiplayer ? multiplayerPlayers : []}
           />
         </aside>
 
@@ -125,7 +272,7 @@ export default function GamePage() {
           )}
 
           {/* Start prompt */}
-          {isIdle && !gameState && (
+          {!isMultiplayer && isIdle && !gameState && (
             <div
               className="absolute inset-0 flex items-center justify-center z-30"
               style={{ background: 'rgba(5, 10, 14, 0.75)' }}
@@ -136,6 +283,21 @@ export default function GamePage() {
                   style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-text-dim)' }}
                 >
                   INITIALIZING...
+                </p>
+              </div>
+            </div>
+          )}
+          {isMultiplayer && !multiplayerStarted && (
+            <div
+              className="absolute inset-0 flex items-center justify-center z-30"
+              style={{ background: 'rgba(5, 10, 14, 0.75)' }}
+            >
+              <div className="text-center">
+                <p
+                  className="text-sm tracking-[0.2em] animate-pulse"
+                  style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-text-dim)' }}
+                >
+                  WAITING FOR HOST TO START...
                 </p>
               </div>
             </div>
@@ -214,7 +376,9 @@ export default function GamePage() {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <span className="text-xs" style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-text-dim)' }}>SCORE</span>
-              <span className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-accent)' }}>{score}</span>
+              <span className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-accent)' }}>
+                {isMultiplayer ? (multiplayerPlayers.find((p) => p.id === socket.getId())?.score || 0) : score}
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs" style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-text-dim)' }}>BEST</span>
@@ -225,15 +389,30 @@ export default function GamePage() {
             className="text-xs font-bold px-2 py-1 rounded"
             style={{
               fontFamily: 'var(--font-display)',
-              color: status === GAME_STATUS.PLAYING ? 'var(--color-accent)' : 'var(--color-warning)',
-              background: status === GAME_STATUS.PLAYING ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 183, 0, 0.1)',
-              border: `1px solid ${status === GAME_STATUS.PLAYING ? 'rgba(0, 255, 136, 0.2)' : 'rgba(255, 183, 0, 0.2)'}`,
+              color: (isMultiplayer ? multiplayerStarted : status === GAME_STATUS.PLAYING) ? 'var(--color-accent)' : 'var(--color-warning)',
+              background: (isMultiplayer ? multiplayerStarted : status === GAME_STATUS.PLAYING) ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 183, 0, 0.1)',
+              border: `1px solid ${(isMultiplayer ? multiplayerStarted : status === GAME_STATUS.PLAYING) ? 'rgba(0, 255, 136, 0.2)' : 'rgba(255, 183, 0, 0.2)'}`,
             }}
           >
             {mode.toUpperCase()}
           </span>
+          {!isMultiplayer && (
+            <button onClick={handleStop} className="btn-neon px-3 py-2 text-xs">
+              <span className="relative z-10">STOP</span>
+            </button>
+          )}
         </div>
       </div>
+
+      {import.meta.env.DEV && isMultiplayer && (
+        <div className="fixed right-3 bottom-3 z-50 glass-card px-3 py-2 text-xs font-mono">
+          <div>FPS: {fps}</div>
+          <div>Ping: {ping ?? "-"} ms</div>
+          <div>Tick: {serverTickRate ?? "-"} ms</div>
+          <div>Players: {multiplayerPlayers.length}</div>
+          <div>Room: {roomCode}</div>
+        </div>
+      )}
 
       {/* Game Over Overlay */}
       {isGameOver && (
