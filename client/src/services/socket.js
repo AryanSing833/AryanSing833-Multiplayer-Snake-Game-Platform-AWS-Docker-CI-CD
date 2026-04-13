@@ -127,23 +127,7 @@ class SocketService {
     this.socket.emit('move', direction);
   }
 
-  /**
-   * Signal that the host is starting the game
-   */
-  startGame() {
-    if (!this.socket) return;
-    this.socket.emit('startGame');
-  }
-
   // ── Event Listeners ────────────────────────────────────────
-
-  /**
-   * Listen for game state updates
-   * @param {function} callback - Called with game state object
-   */
-  onGameUpdate(callback) {
-    this._on('state', callback);
-  }
 
   onMultiplayerGameState(callback) {
     this._on("game-state", callback);
@@ -178,28 +162,8 @@ class SocketService {
     this._on("room-users", callback);
   }
 
-  /**
-   * Listen for a player joining the room
-   * @param {function} callback - Called with { player, players }
-   */
-  onPlayerJoined(callback) {
-    this._on('player-joined', callback);
-  }
-
-  /**
-   * Listen for a player leaving the room
-   * @param {function} callback - Called with { playerId, players }
-   */
-  onPlayerLeft(callback) {
-    this._on('playerLeft', callback);
-  }
-
-  /**
-   * Listen for game start signal
-   * @param {function} callback - Called with game config
-   */
-  onGameStart(callback) {
-    this._on('gameStart', callback);
+  onRoomFull(callback) {
+    this._on("room-full", callback);
   }
 
   /**
@@ -216,14 +180,6 @@ class SocketService {
    */
   onConnectionChange(callback) {
     this.listeners.set('connectionChange', callback);
-  }
-
-  /**
-   * Listen for player initialization
-   * @param {function} callback - Called with { playerId, gridSize }
-   */
-  onInit(callback) {
-    this._on('init', callback);
   }
 
   // ── Internal Helpers ───────────────────────────────────────

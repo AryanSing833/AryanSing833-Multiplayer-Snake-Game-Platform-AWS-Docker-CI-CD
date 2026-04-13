@@ -12,8 +12,9 @@ const path = require("path");
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const GRID_SIZE = 20;
-const TICK_RATE = 40;
+const TICK_RATE = 200;
 const FOOD_COUNT = 3;
+const MAX_PLAYERS = 4;
 
 // Palette for snake colors — one per player slot
 const SNAKE_COLORS = [
@@ -111,6 +112,7 @@ function buildRoomState(roomCode) {
   const room = rooms[roomCode];
   return {
     roomCode,
+    hostId: room.hostId,
     gameStarted: room.gameStarted,
     tickRate: TICK_RATE,
     gridSize: GRID_SIZE,
@@ -194,6 +196,10 @@ io.on("connection", (socket) => {
   socket.on("join-room", (roomCode) => {
     console.log("Joining room:", roomCode);
     const room = getOrCreateRoom(roomCode);
+    if (Object.keys(room.players).length >= MAX_PLAYERS && !room.players[socket.id]) {
+      socket.emit("room-full");
+      return;
+    }
     if (!room.hostId) room.hostId = socket.id;
     room.players[socket.id] = room.players[socket.id] || createPlayer(socket.id);
     spawnFood(room);
@@ -203,14 +209,18 @@ io.on("connection", (socket) => {
 
     const clients = Array.from(io.sockets.adapter.rooms.get(roomCode) || []);
     console.log("Users in room:", clients);
-    io.to(roomCode).emit("room-users", clients);
-    io.to(roomCode).emit("player-joined", socket.id);
+    io.to(roomCode).emit("room-users", {
+      users: clients,
+      hostId: room.hostId,
+      gameStarted: room.gameStarted,
+    });
     io.to(roomCode).emit("game-state", buildRoomState(roomCode));
   });
 
   socket.on("start-game", (roomCode) => {
     const room = rooms[roomCode];
-    if (!room || room.hostId !== socket.id) return;
+    if (!room) return;
+    if (socket.id !== room.hostId) return;
     room.gameStarted = true;
     startRoomLoop(roomCode);
     io.to(roomCode).emit("game-started");
@@ -241,22 +251,32 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     console.log(`[-] Player disconnected: ${socket.id}`);
-    const roomCode = socketToRoom.get(socket.id);
-    if (!roomCode || !rooms[roomCode]) return;
-    const room = rooms[roomCode];
-    delete room.players[socket.id];
     socketToRoom.delete(socket.id);
+    for (const roomCode in rooms) {
+      const room = rooms[roomCode];
 
-    if (room.hostId === socket.id) {
-      room.hostId = Object.keys(room.players)[0] || null;
-    }
+      if (room.players[socket.id]) {
+        delete room.players[socket.id];
+      }
 
-    const clients = Array.from(io.sockets.adapter.rooms.get(roomCode) || []);
-    io.to(roomCode).emit("room-users", clients);
+      if (room.hostId === socket.id) {
+        const remaining = Object.keys(room.players);
+        room.hostId = remaining[0] || null;
+      }
 
-    if (Object.keys(room.players).length === 0) {
-      stopRoomLoop(roomCode);
-      delete rooms[roomCode];
+      if (Object.keys(room.players).length === 0) {
+        clearInterval(room.interval);
+        delete rooms[roomCode];
+        continue;
+      }
+
+      const clients = Array.from(io.sockets.adapter.rooms.get(roomCode) || []);
+      io.to(roomCode).emit("room-users", {
+        users: clients,
+        hostId: room.hostId,
+        gameStarted: room.gameStarted,
+      });
+      io.to(roomCode).emit("game-state", buildRoomState(roomCode));
     }
   });
 });

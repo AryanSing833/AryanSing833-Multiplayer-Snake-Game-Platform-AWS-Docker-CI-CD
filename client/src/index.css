@@ -343,3 +343,30 @@ button:active:not(:disabled) {
     0 0 80px rgba(0, 204, 255, 0.1);
   border-radius: 4px;
 }
+
+.mobile-pad-btn {
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--color-border);
+  background: rgba(11, 19, 24, 0.92);
+  color: var(--color-accent2);
+  font-family: var(--font-display);
+  font-size: 1rem;
+  box-shadow: 0 0 10px rgba(0, 204, 255, 0.2);
+}
+
+@media (max-width: 768px) {
+  #game-page {
+    overflow-x: hidden;
+  }
+
+  #game-page aside {
+    display: none !important;
+  }
+
+  #game-canvas {
+    width: 100% !important;
+    height: auto !important;
+  }
+}

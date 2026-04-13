@@ -111,6 +111,12 @@ export function useGame(options = {}) {
     }
   }, []);
 
+  const setDirection = useCallback((direction) => {
+    if (engineRef.current) {
+      engineRef.current.setDirection(direction);
+    }
+  }, []);
+
   /**
    * Restart the game
    */
@@ -188,6 +194,7 @@ export function useGame(options = {}) {
     status,
     initGame,
     startGame,
+    setDirection,
     togglePause,
     restartGame,
     resetGame,

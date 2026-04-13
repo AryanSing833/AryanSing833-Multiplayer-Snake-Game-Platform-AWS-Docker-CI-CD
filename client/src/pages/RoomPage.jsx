@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { motion } from 'framer-motion';
 import Navbar from '../components/Navbar';
@@ -15,13 +15,13 @@ import { useSocket } from '../hooks/useSocket';
 
 export default function RoomPage() {
   const { code } = useParams();
-  const [searchParams] = useSearchParams();
-  const isHost = searchParams.get('host') === 'true';
   const navigate = useNavigate();
   const { user } = useAuth();
 
   const [copied, setCopied] = useState(false);
   const [players, setPlayers] = useState([]);
+  const [isHost, setIsHost] = useState(false);
+  const [joined, setJoined] = useState(false);
   const { connected, socket } = useSocket({ autoConnect: true });
 
   const copyCode = async (roomCode) => {
@@ -42,19 +42,25 @@ export default function RoomPage() {
     if (!connected || !code) return;
 
     socket.joinRoom(code);
-    socket.onRoomUsers((users) => {
+    socket.onRoomUsers(({ users, hostId }) => {
+      setJoined(true);
+      setIsHost(socket.getId() === hostId);
       setPlayers(
         users.map((id, index) => ({
           id,
           name: id === socket.getId() ? (user?.name || 'You') : `Player ${id.slice(0, 4).toUpperCase()}`,
           avatar: id === socket.getId() ? user?.photoURL : null,
-          isHost: index === 0,
+          isHost: id === hostId,
           isReady: true,
         }))
       );
     });
     socket.onGameStarted(() => {
       navigate(`/game?mode=multiplayer&room=${code}`);
+    });
+    socket.onRoomFull(() => {
+      alert("Room is full");
+      navigate("/dashboard");
     });
 
     return () => {
@@ -71,6 +77,11 @@ export default function RoomPage() {
 
   const handleStartGame = () => {
     socket.startMultiplayerGame(code);
+  };
+
+  const handleJoinGame = () => {
+    if (!joined) return;
+    navigate(`/game?mode=multiplayer&room=${code}`);
   };
 
   const handleLeave = () => {
@@ -261,6 +272,16 @@ export default function RoomPage() {
 
         {/* Action Buttons */}
         <div className="flex flex-col gap-3 w-full animate-slide-up stagger-3">
+          {joined && (
+            <motion.button
+              onClick={handleJoinGame}
+              className="btn-neon w-full py-3 text-sm"
+              whileHover={{ scale: 1.05 }}
+              id="join-game-btn"
+            >
+              <span className="relative z-10">JOIN GAME</span>
+            </motion.button>
+          )}
           {isHost && (
             <motion.button
               onClick={handleStartGame}

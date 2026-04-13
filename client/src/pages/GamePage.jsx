@@ -29,7 +29,8 @@ export default function GamePage() {
   const { socket, connected } = useSocket({ autoConnect: isMultiplayer });
   const [multiplayerState, setMultiplayerState] = useState(null);
   const [previousMultiplayerState, setPreviousMultiplayerState] = useState(null);
-  const [multiplayerStarted, setMultiplayerStarted] = useState(false);
+  const [gameStarted, setGameStarted] = useState(false);
+  const [isHost, setIsHost] = useState(false);
   const [fps, setFps] = useState(0);
   const [ping, setPing] = useState(null);
   const [serverTickRate, setServerTickRate] = useState(null);
@@ -48,6 +49,7 @@ export default function GamePage() {
     status,
     initGame,
     startGame,
+    setDirection,
     restartGame,
     stopGame,
     isGameOver,
@@ -58,6 +60,30 @@ export default function GamePage() {
     playerName: user?.name || 'Player',
     playerColor: '#00ff88',
   });
+
+  const sendDirection = useCallback((dir) => {
+    if (!isMultiplayer) {
+      setDirection(dir);
+      return;
+    }
+    const state = multiplayerStateRef.current;
+    const myId = socket.getId();
+    if (state?.players?.[myId]) {
+      const optimistic = {
+        ...state,
+        players: {
+          ...state.players,
+          [myId]: {
+            ...state.players[myId],
+            direction: dir,
+          },
+        },
+      };
+      multiplayerStateRef.current = optimistic;
+      setMultiplayerState(optimistic);
+    }
+    socket.sendMove(dir);
+  }, [isMultiplayer, socket, setDirection]);
 
   // Auto-start when canvas is initialized
   const handleCanvasInit = useCallback((canvas, container) => {
@@ -84,8 +110,11 @@ export default function GamePage() {
     if (!isMultiplayer || !connected || !roomCode) return;
 
     socket.joinRoom(roomCode);
-    socket.onGameStarted(() => setMultiplayerStarted(true));
+    socket.onGameStarted(() => setGameStarted(true));
     socket.onMultiplayerGameState((state) => {
+      setIsHost(socket.getId() === state.hostId);
+      setGameStarted(Boolean(state.gameStarted));
+      console.log("Host:", state.hostId, "Me:", socket.getId());
       setPreviousMultiplayerState(multiplayerStateRef.current);
       multiplayerStateRef.current = state;
       setMultiplayerState(state);
@@ -98,25 +127,7 @@ export default function GamePage() {
     });
 
     inputRef.current = new InputHandler({
-      onDirection: (dir) => {
-        const state = multiplayerStateRef.current;
-        const myId = socket.getId();
-        if (state?.players?.[myId]) {
-          const optimistic = {
-            ...state,
-            players: {
-              ...state.players,
-              [myId]: {
-                ...state.players[myId],
-                direction: dir,
-              },
-            },
-          };
-          multiplayerStateRef.current = optimistic;
-          setMultiplayerState(optimistic);
-        }
-        socket.sendMove(dir);
-      },
+      onDirection: sendDirection,
       onPause: () => {},
       touchTarget: window,
     });
@@ -130,7 +141,7 @@ export default function GamePage() {
       inputRef.current = null;
       clearInterval(pingTimer);
     };
-  }, [isMultiplayer, connected, roomCode, socket]);
+  }, [isMultiplayer, connected, roomCode, socket, sendDirection]);
 
   const interpolatePlayers = useCallback((prevState, currentState, alpha) => {
     if (!currentState?.players) return {};
@@ -209,6 +220,11 @@ export default function GamePage() {
     navigate('/dashboard');
   };
 
+  const handleStartMultiplayer = () => {
+    if (!roomCode) return;
+    socket.startMultiplayerGame(roomCode);
+  };
+
   return (
     <div
       className="min-h-screen flex flex-col relative"
@@ -229,7 +245,7 @@ export default function GamePage() {
           <GameHUD
             score={isMultiplayer ? (multiplayerPlayers.find((p) => p.id === socket.getId())?.score || 0) : score}
             highScore={highScore}
-            status={isMultiplayer ? (multiplayerStarted ? GAME_STATUS.PLAYING : GAME_STATUS.WAITING) : status}
+            status={isMultiplayer ? (gameStarted ? GAME_STATUS.PLAYING : GAME_STATUS.WAITING) : status}
             mode={mode}
             playerName={user?.name?.split(' ')[0] || 'Player'}
             roomCode={roomCode}
@@ -287,17 +303,22 @@ export default function GamePage() {
               </div>
             </div>
           )}
-          {isMultiplayer && !multiplayerStarted && (
+          {isMultiplayer && !gameStarted && (
             <div
               className="absolute inset-0 flex items-center justify-center z-30"
               style={{ background: 'rgba(5, 10, 14, 0.75)' }}
             >
               <div className="text-center">
+                {isHost && (
+                  <button onClick={handleStartMultiplayer} className="btn-filled mb-4 px-6 py-3 text-sm">
+                    START GAME
+                  </button>
+                )}
                 <p
                   className="text-sm tracking-[0.2em] animate-pulse"
                   style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-text-dim)' }}
                 >
-                  WAITING FOR HOST TO START...
+                  {isHost ? "CLICK START TO BEGIN" : "WAITING FOR HOST..."}
                 </p>
               </div>
             </div>
@@ -389,9 +410,9 @@ export default function GamePage() {
             className="text-xs font-bold px-2 py-1 rounded"
             style={{
               fontFamily: 'var(--font-display)',
-              color: (isMultiplayer ? multiplayerStarted : status === GAME_STATUS.PLAYING) ? 'var(--color-accent)' : 'var(--color-warning)',
-              background: (isMultiplayer ? multiplayerStarted : status === GAME_STATUS.PLAYING) ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 183, 0, 0.1)',
-              border: `1px solid ${(isMultiplayer ? multiplayerStarted : status === GAME_STATUS.PLAYING) ? 'rgba(0, 255, 136, 0.2)' : 'rgba(255, 183, 0, 0.2)'}`,
+              color: (isMultiplayer ? gameStarted : status === GAME_STATUS.PLAYING) ? 'var(--color-accent)' : 'var(--color-warning)',
+              background: (isMultiplayer ? gameStarted : status === GAME_STATUS.PLAYING) ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 183, 0, 0.1)',
+              border: `1px solid ${(isMultiplayer ? gameStarted : status === GAME_STATUS.PLAYING) ? 'rgba(0, 255, 136, 0.2)' : 'rgba(255, 183, 0, 0.2)'}`,
             }}
           >
             {mode.toUpperCase()}
@@ -401,6 +422,17 @@ export default function GamePage() {
               <span className="relative z-10">STOP</span>
             </button>
           )}
+        </div>
+
+        <div className="lg:hidden fixed right-4 bottom-20 z-40" id="mobile-dpad">
+          <div className="grid grid-cols-3 gap-2 w-36">
+            <span />
+            <button className="mobile-pad-btn" onTouchStart={() => sendDirection("UP")} onClick={() => sendDirection("UP")}>▲</button>
+            <span />
+            <button className="mobile-pad-btn" onTouchStart={() => sendDirection("LEFT")} onClick={() => sendDirection("LEFT")}>◀</button>
+            <button className="mobile-pad-btn" onTouchStart={() => sendDirection("DOWN")} onClick={() => sendDirection("DOWN")}>▼</button>
+            <button className="mobile-pad-btn" onTouchStart={() => sendDirection("RIGHT")} onClick={() => sendDirection("RIGHT")}>▶</button>
+          </div>
         </div>
       </div>
 
