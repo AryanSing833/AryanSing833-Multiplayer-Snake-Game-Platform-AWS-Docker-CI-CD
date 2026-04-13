@@ -9,6 +9,7 @@
  *   /room/:code → RoomPage (protected)
  */
 
+import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -18,6 +19,10 @@ import GamePage from './pages/GamePage';
 import RoomPage from './pages/RoomPage';
 
 export default function App() {
+  useEffect(() => {
+    console.log(import.meta.env);
+  }, []);
+
   return (
     <AuthProvider>
       <BrowserRouter>

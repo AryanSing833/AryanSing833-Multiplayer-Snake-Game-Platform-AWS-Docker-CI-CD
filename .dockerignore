@@ -7,8 +7,7 @@ client/node_modules
 .github
 .gitignore
 
-# Environment files (secrets — don't bake into image)
-client/.env
+# Environment files
 .env
 
 # IDE / OS

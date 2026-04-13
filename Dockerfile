@@ -11,10 +11,15 @@ WORKDIR /app/client
 
 # Install dependencies
 COPY client/package.json client/package-lock.json* ./
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 
-# Copy source and build
+# Copy source
 COPY client/ ./
+
+# Ensure env is present for Vite build-time injection
+COPY client/.env ./
+
+# Build frontend
 RUN npm run build
 
 
@@ -25,7 +30,7 @@ WORKDIR /app
 
 # Install backend dependencies
 COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 
 # Copy backend server
 COPY server.js ./
