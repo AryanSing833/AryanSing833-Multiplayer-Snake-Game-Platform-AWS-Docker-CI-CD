@@ -56,6 +56,14 @@ jobs:
             fi
 
             # Redeploy container
+            # Kill anything using port 80
+            sudo docker ps -q --filter "publish=80" | xargs -r sudo docker stop
+
+            # Remove old container
             sudo docker rm -f snake || true
+
+            # Build image
             sudo docker build --pull -t snake .
+
+            # Run container
             sudo docker run -d -p 80:3000 --name snake snake
