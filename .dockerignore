@@ -1,29 +1,39 @@
-# Dependencies
-node_modules
-client/node_modules
+# ---------- FRONTEND BUILD ----------
+FROM node:20-alpine AS frontend-build
 
-# Git
-.git
-.github
-.gitignore
+WORKDIR /app/client
 
-# Environment files
-.env
+# Install deps
+COPY client/package*.json ./
+RUN npm install
 
-# IDE / OS
-.vscode
-.idea
-*.swp
-*.swo
-.DS_Store
-Thumbs.db
+# Copy frontend code
+COPY client/ ./
 
-# Keys (NEVER put in Docker image)
-*.pem
-*.key
+# Set API URL (important for Vite)
+ENV VITE_API_URL=http://51.20.184.90
+
+# Build frontend
+RUN npm run build
 
 
+# ---------- BACKEND ----------
+FROM node:20-alpine
 
-# Docs
-README.md
-*.md
+WORKDIR /app
+
+# Install backend deps
+COPY package*.json ./
+RUN npm install
+
+# Copy backend code
+COPY . .
+
+# Copy built frontend from previous stage
+COPY --from=frontend-build /app/client/dist ./client/dist
+
+# Expose port
+EXPOSE 80
+
+# Start server
+CMD ["node", "server.js"]
