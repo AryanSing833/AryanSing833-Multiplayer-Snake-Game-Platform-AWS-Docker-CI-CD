@@ -1,4 +1,4 @@
-name: Deploy to S3
+name: Deploy to EC2
 
 on:
   push:
@@ -10,16 +10,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Configure AWS
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_KEY }}
-        aws-region: ap-south-1
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/AryanSingh833-Multiplayer-Snake-Game-Platform-AWS-Docker-CI-CD
 
-    - name: Deploy
-      run: |
-        aws s3 sync . s3://aryansingh-lpu804 --delete
+            git pull origin main
+
+            docker stop snake || true
+            docker rm snake || true
+
+            docker build -t snake .
+            docker run -d -p 80:80 --name snake snake
