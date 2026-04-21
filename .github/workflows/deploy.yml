@@ -20,19 +20,42 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            set -e
+
             cd ~
 
+            # Prevent git safety + interactive prompts
             git config --global --add safe.directory '*'
-            sudo yum install git -y
+            export GIT_TERMINAL_PROMPT=0
 
+            # Install git if missing
+            if ! command -v git &> /dev/null; then
+              sudo yum install git -y
+            fi
+
+            # Clone repo if not exists
             if [ ! -d "AryanSingh833-Multiplayer-Snake-Game-Platform-AWS-Docker-CI-CD" ]; then
               git clone https://github.com/AryanSingh833/AryanSingh833-Multiplayer-Snake-Game-Platform-AWS-Docker-CI-CD.git
             fi
 
-            cd AryanSingh833-Multiplayer-Snake-Game-Platform-AWS-Docker-CI-CD
+            cd AryanSingh833-Multiplayer-Snake-Game-Platform-AWS-Docker-CI-CD || exit 1
 
+            # Always get latest code
+            git reset --hard
             git pull origin main
 
+            # Ensure Docker is installed
+            if ! command -v docker &> /dev/null; then
+              sudo yum install docker -y
+              sudo systemctl start docker
+              sudo systemctl enable docker
+            fi
+
+            # Clean old container
             sudo docker rm -f snake || true
-            sudo docker build -t snake .
+
+            # Build fresh image
+            sudo docker build --pull -t snake .
+
+            # Run container
             sudo docker run -d -p 80:80 --name snake snake
