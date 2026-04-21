@@ -76,11 +76,15 @@ export function useGame(options = {}) {
     });
     engineRef.current = engine;
 
-    // Create input handler
+    // Create input handler — starts INACTIVE.
+    // It will be activated in the status-sync effect below once the engine
+    // enters PLAYING state. This prevents the lobby / pre-game screen from
+    // accidentally routing keystrokes to the engine.
     const input = new InputHandler({
       onDirection: (dir) => engine.setDirection(dir),
-      onPause: () => engine.togglePause(),
+      onPause:     () => engine.togglePause(),
       touchTarget: canvas,
+      active: false, // explicitly inactive until game starts
     });
     inputRef.current = input;
 
@@ -97,9 +101,15 @@ export function useGame(options = {}) {
    * Start the game
    */
   const startGame = useCallback(() => {
-    if (engineRef.current) {
-      engineRef.current.start();
+    if (!engineRef.current) return;
+
+    // Blur any focused input/textarea so arrow keys are never captured by the
+    // DOM form element instead of our document-level keydown listener.
+    if (document.activeElement && document.activeElement !== document.body) {
+      document.activeElement.blur();
     }
+
+    engineRef.current.start();
   }, []);
 
   /**
@@ -165,6 +175,15 @@ export function useGame(options = {}) {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, [handleResize]);
+
+  // Sync InputHandler active state with game status.
+  // This is the single source of truth — input is ONLY active while the engine
+  // is in PLAYING state. Paused / idle / game-over all disable input routing.
+  useEffect(() => {
+    if (!inputRef.current) return;
+    const isPlaying = status === GAME_STATUS.PLAYING;
+    inputRef.current.setActive(isPlaying);
+  }, [status]);
 
   // Cleanup on unmount
   useEffect(() => {

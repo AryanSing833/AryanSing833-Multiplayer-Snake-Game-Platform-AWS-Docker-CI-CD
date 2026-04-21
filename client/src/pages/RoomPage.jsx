@@ -90,11 +90,21 @@ export default function RoomPage() {
       alert("Enter your name");
       return;
     }
+    // Blur form fields so keyboard focus is fully released before the game
+    // screen mounts. Prevents the first arrow-key from being captured by an
+    // input element instead of our document-level InputHandler.
+    if (document.activeElement && document.activeElement !== document.body) {
+      document.activeElement.blur();
+    }
     setProfileReady(true);
   };
 
   const handleJoinGame = () => {
     if (!joined) return;
+    // Ensure no form element keeps focus across the navigation.
+    if (document.activeElement && document.activeElement !== document.body) {
+      document.activeElement.blur();
+    }
     navigate(`/game?mode=multiplayer&room=${code}`);
   };
 

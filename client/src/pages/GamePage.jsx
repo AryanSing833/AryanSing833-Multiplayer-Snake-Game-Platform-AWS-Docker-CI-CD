@@ -134,11 +134,16 @@ export default function GamePage() {
       setGameStarted(false);
     });
 
-    inputRef.current = new InputHandler({
+    // Create one InputHandler for the whole multiplayer session.
+    // Start it INACTIVE — it is activated below when `gameStarted` becomes
+    // true. This prevents arrow keys in the waiting lobby from being swallowed.
+    const handler = new InputHandler({
       onDirection: sendDirection,
-      onPause: () => {},
-      touchTarget: window,
+      onPause:     () => {},          // no local pause in multiplayer
+      touchTarget: document.body,     // body covers the whole viewport
+      active:      false,             // activated via setActive() below
     });
+    inputRef.current = handler;
 
     const pingTimer = setInterval(() => {
       socket.sendPing(performance.now());
@@ -151,47 +156,22 @@ export default function GamePage() {
     };
   }, [isMultiplayer, connected, roomCode, socket, sendDirection]);
 
+  // Activate / deactivate the multiplayer InputHandler in sync with gameStarted.
+  // When the game goes live: blur any focused input so the keyboard is free,
+  // then enable input routing. When the game ends, disable it.
   useEffect(() => {
-    document.body.style.overflow = "hidden";
-    document.body.style.touchAction = "none";
-    const blockScroll = (e) => e.preventDefault();
-    window.addEventListener("touchmove", blockScroll, { passive: false });
-    return () => {
-      document.body.style.overflow = "auto";
-      document.body.style.touchAction = "auto";
-      window.removeEventListener("touchmove", blockScroll);
-    };
-  }, []);
-
-  useEffect(() => {
-    let startX = 0;
-    let startY = 0;
-
-    const handleTouchStart = (e) => {
-      startX = e.touches[0].clientX;
-      startY = e.touches[0].clientY;
-    };
-
-    const handleTouchEnd = (e) => {
-      const endX = e.changedTouches[0].clientX;
-      const endY = e.changedTouches[0].clientY;
-      const dx = endX - startX;
-      const dy = endY - startY;
-      if (Math.abs(dx) < 20 && Math.abs(dy) < 20) return;
-      if (Math.abs(dx) > Math.abs(dy)) {
-        sendDirection(dx > 0 ? "RIGHT" : "LEFT");
-      } else {
-        sendDirection(dy > 0 ? "DOWN" : "UP");
+    if (!isMultiplayer || !inputRef.current) return;
+    if (gameStarted) {
+      // Blur any focused form element (e.g. room-code input) before enabling
+      // input so the first arrow-key press is not swallowed by the browser.
+      if (document.activeElement && document.activeElement !== document.body) {
+        document.activeElement.blur();
       }
-    };
-
-    window.addEventListener("touchstart", handleTouchStart, { passive: true });
-    window.addEventListener("touchend", handleTouchEnd, { passive: true });
-    return () => {
-      window.removeEventListener("touchstart", handleTouchStart);
-      window.removeEventListener("touchend", handleTouchEnd);
-    };
-  }, [sendDirection]);
+      inputRef.current.setActive(true);
+    } else {
+      inputRef.current.setActive(false);
+    }
+  }, [isMultiplayer, gameStarted]);
 
   const interpolatePlayers = useCallback((prevState, currentState, alpha) => {
     if (!currentState?.players) return {};
