@@ -1,44 +1,38 @@
-# ═══════════════════════════════════════════════════════════════
-# SNAKE.IO — Multi-stage Dockerfile (Clean & Stable)
-# Stage 1: Build React frontend
-# Stage 2: Run Node backend + serve frontend
-# ═══════════════════════════════════════════════════════════════
-
-# ── Stage 1: Build React Frontend ─────────────────────────────
+# ---------- FRONTEND BUILD ----------
 FROM node:20-alpine AS frontend-build
 
 WORKDIR /app/client
 
-# Install dependencies
-COPY client/package.json client/package-lock.json* ./
-RUN npm ci --no-audit --no-fund
+# Install deps
+COPY client/package*.json ./
+RUN npm ci
 
-# Copy source
+# Copy frontend code
 COPY client/ ./
 
-# Ensure env is present for Vite build-time injection
-COPY client/.env ./
+# Optional: set API URL (only if needed)
+ENV VITE_API_URL=http://51.20.184.90
 
 # Build frontend
 RUN npm run build
 
 
-# ── Stage 2: Production Server ────────────────────────────────
+# ---------- BACKEND ----------
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Install backend dependencies
-COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
+# Install backend deps
+COPY package*.json ./
+RUN npm ci --omit=dev
 
-# Copy backend server
+# Copy backend code
 COPY server.js ./
 
-# Copy ONLY built frontend from stage 1
+# Copy built frontend
 COPY --from=frontend-build /app/client/dist ./client/dist
 
-# Expose port
+# Expose backend port
 EXPOSE 3000
 
 # Start server
